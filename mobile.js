@@ -1,94 +1,98 @@
 (function () {
+    // 1. Добавляем улучшенные стили
     var style = document.createElement('style');
-    style.id = 'ifx-pro-torrents';
     style.textContent = `
         .ifx-res-block {
-            margin: 5px 10px 10px 10px !important;
-            padding: 8px 12px !important;
-            border-radius: 4px !important;
-            background: rgba(255,255,255,0.03) !important;
-            font-size: 13px !important;
-            line-height: 1.4 !important;
+            margin: 10px !important;
+            padding: 10px 15px !important;
+            border-radius: 6px !important;
+            font-family: sans-serif;
+            border-left: 5px solid #555;
+            background: rgba(0,0,0,0.3) !important;
         }
-        .ifx-res-title { font-weight: bold; font-size: 15px !important; margin-bottom: 3px; }
-        .ifx-res-tech { opacity: 0.8; font-size: 12px !important; }
-        .ifx-res-note { margin-top: 4px; font-size: 12px !important; }
+        .ifx-res-title { font-weight: bold; font-size: 16px !important; margin-bottom: 4px; }
+        .ifx-res-tech { opacity: 0.9; font-size: 13px !important; color: #eee; }
+        .ifx-res-note { margin-top: 6px; font-size: 12px !important; line-height: 1.3; }
 
-        /* Цветовые схемы для блоков */
-        .ifx-res-ideal { background: rgba(46, 204, 113, 0.15) !important; border-left: 4px solid #2ecc71 !important; }
+        /* Идеально */
+        .ifx-res-ideal { background: rgba(46, 204, 113, 0.12) !important; border-left-color: #2ecc71 !important; }
         .ifx-res-ideal .ifx-res-title { color: #2ecc71 !important; }
-
-        .ifx-res-good { background: rgba(52, 152, 219, 0.1) !important; border-left: 4px solid #3498db !important; }
+        
+        /* Рекомендуется */
+        .ifx-res-good { background: rgba(52, 152, 219, 0.12) !important; border-left-color: #3498db !important; }
         .ifx-res-good .ifx-res-title { color: #3498db !important; }
 
-        .ifx-res-warn { background: rgba(241, 196, 15, 0.1) !important; border-left: 4px solid #f1c40f !important; }
+        /* Внимание / Низкий битрейт */
+        .ifx-res-warn { background: rgba(241, 196, 15, 0.1) !important; border-left-color: #f1c40f !important; }
         .ifx-res-warn .ifx-res-title { color: #f1c40f !important; }
-        .ifx-res-warn .ifx-res-note { color: #f1c40f !important; }
+        .ifx-res-warn .ifx-res-note { color: #f1c40f !important; opacity: 0.9; }
     `;
     document.head.appendChild(style);
 
-    function getAnalysis(data) {
-        var score = 0;
-        var title = "Обычная раздача";
-        var note = "Битрейт в норме";
-        var type = "good";
-
-        // Анализ битрейта
-        if (data.bitrate >= 25) {
-            title = "Идеально";
-            score += 3;
-            type = "ideal";
-        } else if (data.bitrate >= 14) {
-            title = "Рекомендуется";
-            score += 2;
-            type = "good";
-        } else {
-            title = "Низкий битрейт";
-            note = "Низкий битрейт: Идеально 25-35+ Mbps • Текущий " + data.bitrate + " Mbps";
-            type = "warn";
-        }
-
-        // Анализ сидов и личей
-        if (data.leechs > data.seeds && data.seeds < 100) {
-            note = "На данной раздаче качающих больше чем раздающих - может быть медленная загрузка";
-            if (type !== 'warn') type = "warn";
-        }
-
-        return { title: title, note: note, type: type };
-    }
-
     function processItem(el) {
-        if (el.classList.contains('ifx-analyzed')) return;
+        if (el.classList.contains('ifx-v3-ready')) return;
 
-        // Собираем данные
-        var seeds = parseInt(el.querySelector('.torrent-item__seeds')?.textContent.replace(/\s/g, '')) || 0;
-        var leechs = parseInt(el.querySelector('.torrent-item__leechs')?.textContent.replace(/\s/g, '')) || 0;
-        var bitrate = parseFloat(el.querySelector('.torrent-item__bitrate')?.textContent) || 0;
-        var size = el.querySelector('.torrent-item__size')?.textContent || '';
+        // --- ИЗВЛЕЧЕНИЕ ДАННЫХ (с защитой от ошибок) ---
+        var rawSeeds = el.querySelector('.torrent-item__seeds')?.textContent || '0';
+        var rawLeechs = el.querySelector('.torrent-item__leechs')?.textContent || '0';
+        var rawBitrate = el.querySelector('.torrent-item__bitrate')?.textContent || '0';
         
+        // Очищаем числа от мусора (пробелы, "Мбит/с" и т.д.)
+        var seeds = parseInt(rawSeeds.replace(/[^\d]/g, '')) || 0;
+        var leechs = parseInt(rawLeechs.replace(/[^\d]/g, '')) || 0;
+        var bitrate = parseFloat(rawBitrate.replace(/[^\d.]/g, '')) || 0;
+
+        // Данные из названия
         var titleText = el.querySelector('.torrent-item__title')?.textContent || '';
-        var codec = titleText.includes('HEVC') || titleText.includes('x265') ? 'HEVC' : 'AVC';
-        var res = titleText.includes('2160') || titleText.includes('4K') ? '2160p' : '1080p';
+        var is4K = titleText.includes('2160') || titleText.includes('4K');
+        var codec = titleText.includes('HEVC') || titleText.includes('H.265') || titleText.includes('x265') ? 'HEVC' : 'AVC';
+        var hdr = titleText.match(/HDR|DV|Dolby Vision|HDR10\+/i)?.[0] || 'SDR';
 
-        var analysis = getAnalysis({ seeds: seeds, leechs: leechs, bitrate: bitrate });
+        // --- ЛОГИКА АНАЛИЗА ---
+        var result = { title: "Хорошая раздача", note: "Параметры в норме.", type: "good" };
 
-        // Создаем блок как на скриншоте
-        var infoBlock = document.createElement('div');
-        infoBlock.className = 'ifx-res-block ifx-res-' + analysis.type;
-        infoBlock.innerHTML = `
-            <div class="ifx-res-title">${analysis.title} (${seeds})</div>
-            <div class="ifx-res-tech">${res} • ${codec} • ${bitrate} Mbps • WEB-DL</div>
-            <div class="ifx-res-note">${analysis.note}</div>
+        if (is4K) {
+            if (bitrate >= 25) {
+                result = { title: "Идеально", note: "Высокий битрейт для 4K. Максимальное качество.", type: "ideal" };
+            } else if (bitrate < 15) {
+                result = { 
+                    title: "Низкий битрейт (" + seeds + ")", 
+                    note: "Низкий битрейт для 4K: Идеально 25-50+ Mbps • Текущий " + (bitrate || 'неизвестен'), 
+                    type: "warn" 
+                };
+            }
+        } else {
+            // Для 1080p
+            if (bitrate >= 10) result = { title: "Отличная раздача", note: "Оптимально для Full HD.", type: "ideal" };
+            else result = { title: "Среднее качество", note: "Битрейт ниже среднего для 1080p.", type: "good" };
+        }
+
+        // Проверка скорости (сиды vs личи)
+        if (leechs > seeds && seeds < 50) {
+            result.note = "Внимание: качающих больше чем раздающих. Возможна низкая скорость.";
+            result.type = "warn";
+        }
+
+        // --- ОТРИСОВКА ---
+        // Удаляем старые блоки, если они были созданы прошлым кодом
+        el.querySelectorAll('.ifx-res-block').forEach(b => b.remove());
+
+        var info = document.createElement('div');
+        info.className = 'ifx-res-block ifx-res-' + result.type;
+        info.innerHTML = `
+            <div class="ifx-res-title">${result.title} (${seeds})</div>
+            <div class="ifx-res-tech">${is4K ? '2160p' : '1080p'} • ${codec} • ${hdr} • ${bitrate} Mbps</div>
+            <div class="ifx-res-note">${result.note}</div>
         `;
 
-        el.appendChild(infoBlock);
-        el.classList.add('ifx-analyzed');
+        el.appendChild(info);
+        el.classList.add('ifx-v3-ready');
     }
 
-    // Наблюдатель
-    var observer = new MutationObserver(function (mutations) {
-        mutations.forEach(function (m) {
-            m.addedNodes.forEach(function (node) {
+    // Наблюдатель за появлением новых элементов
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
                 if (node.nodeType === 1) {
                     if (node.classList.contains('torrent-item')) processItem(node);
                     node.querySelectorAll('.torrent-item').forEach(processItem);
@@ -98,4 +102,5 @@
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
+    document.querySelectorAll('.torrent-item').forEach(processItem);
 })();
