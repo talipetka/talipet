@@ -91,8 +91,20 @@
     // ── SCAN (все подсети) ────────────────────────
     function probe(ip) {
         return new Promise(function(res) {
+            var start = Date.now();
             ajax('http://'+ip+':'+PORT+'/echo','GET',null,SCAN_MS)
-                .then(function(d){ res({ip:ip,info:d}); })
+                .then(function(d){
+                    var took = Date.now() - start;
+                    // Дополнительная проверка: попытка получить список торрентов, чтобы убедиться, что это TorrServer
+                    ajax('http://'+ip+':'+PORT+'/torrents','POST',{action:'list'}, SCAN_MS)
+                        .then(function(list){
+                            res({ip:ip, info:d||{}, torrents: Array.isArray(list)?list:[], time: took});
+                        })
+                        .catch(function(){
+                            // Сервер ответил на /echo, но /torrents не доступен — всё равно считаем живым
+                            res({ip:ip, info:d||{}, torrents: [], time: took});
+                        });
+                })
                 .catch(function(){ res(null); });
         });
     }
@@ -311,7 +323,7 @@
                 var p=body.querySelector('#ts-p');
                 var s=body.querySelector('#ts-sub');
                 if(p) p.textContent='Сканирование… '+pct+'%';
-                if(s && list.length) s.textContent='Найдено: '+list.length+(list.length ? ' → '+list.map(function(x){return x.ip;}).join(', ') : '');
+                    if(s && list.length) s.textContent='Найдено: '+list.length+(list.length ? ' → '+list.map(function(x){return x.ip+(x.time? ' ['+x.time+'ms]':'');}).join(', ') : '');
             },
             function(list){
                 var p=body.querySelector('#ts-p');
