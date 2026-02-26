@@ -52,7 +52,10 @@
         '.ts-found-btn{padding:.3em .8em;border:1px solid rgba(76,175,80,.4);border-radius:4px;cursor:pointer;font-size:.78em;background:rgba(76,175,80,.1);color:#4caf50;outline:none;font-family:inherit}',
         '.ts-found-btn:hover{background:rgba(76,175,80,.22);border-color:#4caf50}',
         '.ts-found-active{border-color:#4caf50 !important;background:rgba(76,175,80,.12) !important}',
-        '.ts-scan-sub{font-size:.75em;color:rgba(255,255,255,.28);margin-top:.2em}'
+        '.ts-scan-sub{font-size:.75em;color:rgba(255,255,255,.28);margin-top:.2em}',
+        'input[type="text"].ts-input{padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;width:100%;box-sizing:border-box}',
+        'input[type="text"].ts-input:focus{outline:none;border-color:rgba(255,255,255,.5);background:#1a2638}',
+        'code{background:#1e2642;padding:.1em .3em;border-radius:2px;color:#aaa;font-size:.9em}'
     ].join('');
     document.head.appendChild(style);
 
@@ -218,14 +221,82 @@
         });
     }
 
-    // ── RENDER SCAN ───────────────────────────────
-    function renderScan(body) {
+    // ── RENDER SCAN INPUT ─────────────────────────
+    function renderScanInput(body) {
+        var h = '<div class="ts-sec">Настройка сканирования</div>';
+        h += '<div class="ts-msg" style="margin:.6em 0">Введите диапазон для сканирования</div>';
+        h += '<div style="margin:.8em 0">';
+        h += '<div style="color:rgba(255,255,255,.45);font-size:.85em;margin-bottom:.4em">Префикс IP</div>';
+        h += '<div style="display:flex;gap:.4em"><input type="text" id="ts-prefix" value="192.168." style="flex:1;padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em" /></div>';
+        h += '</div>';
+        h += '<div style="margin:.8em 0">';
+        h += '<div style="color:rgba(255,255,255,.45);font-size:.85em;margin-bottom:.4em">Диапазон последнего октета</div>';
+        h += '<div style="display:flex;gap:.4em">';
+        h += '<input type="text" id="ts-range" value="1-31" style="flex:1;padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;placeholder:\'1-31 или 1,5,10\'" />';
+        h += '</div>';
+        h += '<div style="color:rgba(255,255,255,.28);font-size:.75em;margin-top:.3em">Примеры: <code style="background:#1e2642;padding:.1em .3em;border-radius:2px">1-31</code>, <code style="background:#1e2642;padding:.1em .3em;border-radius:2px">0-255</code>, <code style="background:#1e2642;padding:.1em .3em;border-radius:2px">1,5,10,20</code></div>';
+        h += '</div>';
+        h += '<div class="ts-btns" style="margin-top:1em">';
+        h += '<button class="ts-btn" id="ts-start-scan">🔍 Начать сканирование</button>';
+        h += '<button class="ts-btn" id="ts-cancel-scan">✕ Отмена</button>';
+        h += '</div>';
+
+        body.innerHTML = h;
+
+        var prefixInput = body.querySelector('#ts-prefix');
+        var rangeInput = body.querySelector('#ts-range');
+        var startBtn = body.querySelector('#ts-start-scan');
+        var cancelBtn = body.querySelector('#ts-cancel-scan');
+
+        startBtn.onclick = function() {
+            var prefix = (prefixInput.value || '192.168.').trim();
+            var rangeStr = (rangeInput.value || '1-31').trim();
+
+            var subnets = [];
+            
+            // Парсим диапазон: "1-31" или "1,5,10,20"
+            if(rangeStr.indexOf('-') !== -1) {
+                var parts = rangeStr.split('-');
+                var start = parseInt(parts[0],10);
+                var end = parseInt(parts[1],10);
+                if(!isNaN(start) && !isNaN(end)) {
+                    for(var i = Math.min(start,end); i <= Math.max(start,end); i++) {
+                        subnets.push(prefix + i);
+                    }
+                }
+            } else if(rangeStr.indexOf(',') !== -1) {
+                rangeStr.split(',').forEach(function(num){
+                    var n = parseInt(num.trim(), 10);
+                    if(!isNaN(n)) subnets.push(prefix + n);
+                });
+            } else {
+                var single = parseInt(rangeStr, 10);
+                if(!isNaN(single)) subnets.push(prefix + single);
+            }
+
+            if(subnets.length === 0) {
+                Lampa.Noty.show('Некорректный диапазон');
+                return;
+            }
+
+            renderScanProgress(body, subnets);
+        };
+
+        cancelBtn.onclick = function() {
+            renderStatus(savedHost || '', body);
+        };
+
+        prefixInput.focus();
+    }
+
+    // ── RENDER SCAN PROGRESS ───────────────────────
+    function renderScanProgress(body, subnets) {
         body.innerHTML = '<div class="ts-sec">Поиск TorrServer в сети</div>'
-            +'<div class="ts-msg" id="ts-p">Сканирование '+SUBNETS.join(', ')+'.x… 0%</div>'
-            +'<div class="ts-scan-sub" id="ts-sub">Проверяем '+SUBNETS.length+' подсети × 254 адреса</div>'
+            +'<div class="ts-msg" id="ts-p">Сканирование '+subnets.join(', ')+'.x… 0%</div>'
+            +'<div class="ts-scan-sub" id="ts-sub">Проверяем '+subnets.length+' подсети × 254 адреса</div>'
             +'<div id="ts-f" style="margin-top:.6em"></div>';
 
-        scan(
+        scanCustom(subnets,
             function(pct, list){
                 var p=body.querySelector('#ts-p');
                 var s=body.querySelector('#ts-sub');
@@ -243,9 +314,11 @@
 
                 if(!list.length){
                     f.innerHTML='<div class="ts-msg c-r" style="margin-top:.5em">'
-                        +'TorrServer не найден ни в одной из подсетей.<br>'
+                        +'TorrServer не найден в указанных подсетях.<br>'
                         +'<span style="font-size:.88em;color:#888">Убедитесь что приложение запущено на ПК или Android</span>'
-                        +'</div>';
+                        +'</div>'
+                        +'<div class="ts-btns" style="margin-top:.8em"><button class="ts-btn" id="ts-back-input">← Назад</button></div>';
+                    f.querySelector('#ts-back-input').onclick = function(){ renderScanInput(body); };
                     return;
                 }
 
@@ -285,6 +358,32 @@
                 });
             }
         );
+    }
+
+    // ── SCAN CUSTOM ────────────────────────────────
+    function scanCustom(subnets, onProg, onDone) {
+        var ips = [];
+        subnets.forEach(function(subnet) {
+            for(var i=1; i<=254; i++) ips.push(subnet+'.'+i);
+        });
+
+        var found=[], done=0, total=ips.length;
+
+        function batch(off) {
+            if(off>=total) return;
+            Promise.all(ips.slice(off,off+BATCH).map(probe)).then(function(r){
+                r.forEach(function(x){ if(x) found.push(x); });
+                done+=Math.min(BATCH,total-off);
+                onProg(Math.round(done/total*100), found.slice());
+                if(done<total) batch(off+BATCH); else onDone(found);
+            });
+        }
+        batch(0);
+    }
+
+    // ── RENDER SCAN ───────────────────────────────
+    function renderScan(body) {
+        renderScanInput(body);
     }
 
     // ── OPEN PANEL ────────────────────────────────
