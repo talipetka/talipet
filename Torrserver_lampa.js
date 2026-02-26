@@ -319,12 +319,8 @@
         overlay.onclick=function(e){ if(e.target===overlay) close(); };
         document.addEventListener('keydown',onKey);
 
-        if(savedHost){
-            renderStatus(savedHost,body);
-            timer=setInterval(function(){ renderStatus(savedHost,body); },REFRESH_MS);
-        } else {
-            renderScan(body);
-        }
+        // Всегда начинаем сканирование сети, игнорируем сохранённый IP
+        renderScan(body);
     }
 
     // ── INJECT MENU ───────────────────────────────
