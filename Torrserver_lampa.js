@@ -1,9 +1,9 @@
 (function () {
 
     var PORT       = 8090;
-    var SUBNET     = '192.168.31';
+    var SUBNETS    = ['192.168.0', '192.168.1', '192.168.31', '10.0.0'];  // все популярные подсети
     var SCAN_MS    = 600;
-    var BATCH      = 40;
+    var BATCH      = 50;
     var REFRESH_MS = 10000;
 
     var savedHost = Lampa.Storage.get('ts_host', '');
@@ -32,7 +32,7 @@
         '.ts-spd-card{background:#1e2642;border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:.7em .9em}',
         '.ts-spd-lbl{font-size:.68em;color:rgba(255,255,255,.4);margin-bottom:.25em}',
         '.ts-spd-val{font-size:1.05em;font-weight:700}',
-        '.ts-list{max-height:30vh;overflow-y:auto;margin:.2em 0 .4em}',
+        '.ts-list{max-height:28vh;overflow-y:auto;margin:.2em 0 .4em}',
         '.ts-item{padding:.5em 0;border-bottom:1px solid rgba(255,255,255,.05)}',
         '.ts-item:last-child{border-bottom:none}',
         '.ts-item-name{font-size:.84em;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -42,7 +42,14 @@
         '.ts-btn:hover,.ts-btn:focus{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}',
         '.ts-hint{color:rgba(255,255,255,.2);font-size:.7em;margin-top:.55em}',
         '.ts-msg{color:#aaa;padding:.4em 0;font-size:.9em}',
-        '.ts-prog{color:#aaa;padding:.4em 0;font-size:.9em}'
+        '.ts-found-item{display:flex;align-items:center;justify-content:space-between;padding:.5em 0;border-bottom:1px solid rgba(255,255,255,.06)}',
+        '.ts-found-item:last-child{border-bottom:none}',
+        '.ts-found-ip{font-size:.88em;color:#fff}',
+        '.ts-found-ver{font-size:.75em;color:rgba(255,255,255,.35)}',
+        '.ts-found-btn{padding:.3em .8em;border:1px solid rgba(76,175,80,.4);border-radius:4px;cursor:pointer;font-size:.78em;background:rgba(76,175,80,.1);color:#4caf50;outline:none;font-family:inherit}',
+        '.ts-found-btn:hover{background:rgba(76,175,80,.22);border-color:#4caf50}',
+        '.ts-found-active{border-color:#4caf50 !important;background:rgba(76,175,80,.12) !important}',
+        '.ts-scan-sub{font-size:.75em;color:rgba(255,255,255,.28);margin-top:.2em}'
     ].join('');
     document.head.appendChild(style);
 
@@ -73,7 +80,7 @@
     function tsStat(h,hsh) { return ajax('http://'+h+':'+PORT+'/torrent/stat','POST',{action:'stat',hash:hsh}); }
     function tsDrop(h)     { return ajax('http://'+h+':'+PORT+'/torrents','POST',{action:'drop'}); }
 
-    // ── SCAN ─────────────────────────────────────
+    // ── SCAN (все подсети) ────────────────────────
     function probe(ip) {
         return new Promise(function(res) {
             ajax('http://'+ip+':'+PORT+'/echo','GET',null,SCAN_MS)
@@ -83,8 +90,14 @@
     }
 
     function scan(onProg, onDone) {
-        var ips=[]; for(var i=1;i<=254;i++) ips.push(SUBNET+'.'+i);
+        // Генерируем все IP сразу по всем подсетям
+        var ips = [];
+        SUBNETS.forEach(function(subnet) {
+            for(var i=1; i<=254; i++) ips.push(subnet+'.'+i);
+        });
+
         var found=[], done=0, total=ips.length;
+
         function batch(off) {
             if(off>=total) return;
             Promise.all(ips.slice(off,off+BATCH).map(probe)).then(function(r){
@@ -95,6 +108,31 @@
             });
         }
         batch(0);
+    }
+
+    // ── ПРИМЕНИТЬ СЕРВЕР ─────────────────────────
+    // Прописывает IP во все места где Lampa хранит адрес TorrServer
+    function applyServer(ip) {
+        savedHost = ip;
+
+        // Сохраняем в наш ключ
+        Lampa.Storage.set('ts_host', ip);
+
+        // Прописываем во все известные ключи которые используют плагины TorrServer для Lampa
+        var fullUrl = 'http://'+ip+':'+PORT;
+        Lampa.Storage.set('torrserver',         fullUrl);
+        Lampa.Storage.set('torrserver_url',     fullUrl);
+        Lampa.Storage.set('ts_url',             fullUrl);
+        Lampa.Storage.set('torr_server',        fullUrl);
+        Lampa.Storage.set('torrserver_address', fullUrl);
+
+        // Также пробуем через Lampa.Params если доступен
+        if(typeof Lampa.Params !== 'undefined') {
+            try { Lampa.Params.set('torrserver', fullUrl); } catch(e){}
+        }
+
+        Lampa.Noty.show('✓ TorrServer: '+ip+' — сохранён и применён');
+        console.log('[TorrServer] Applied server:', fullUrl);
     }
 
     // ── RENDER STATUS ─────────────────────────────
@@ -171,7 +209,7 @@
             });
 
         }).catch(function(){
-            body.innerHTML='<div class="ts-msg c-r">⚠ '+host+' недоступен</div>'
+            body.innerHTML='<div class="ts-msg c-r">⚠ Сервер '+host+' недоступен</div>'
                 +'<div class="ts-btns"><button class="ts-btn" id="ts-scn">🔍 Найти сервер</button></div>';
             body.querySelector('#ts-scn').onclick = function(){ renderScan(body); };
         });
@@ -179,43 +217,66 @@
 
     // ── RENDER SCAN ───────────────────────────────
     function renderScan(body) {
-        body.innerHTML = '<div class="ts-sec">Автообнаружение</div>'
-            +'<div class="ts-prog" id="ts-p">Сканирование '+SUBNET+'.1–254… 0%</div>'
-            +'<div id="ts-f"></div>';
+        body.innerHTML = '<div class="ts-sec">Поиск TorrServer в сети</div>'
+            +'<div class="ts-msg" id="ts-p">Сканирование '+SUBNETS.join(', ')+'.x… 0%</div>'
+            +'<div class="ts-scan-sub" id="ts-sub">Проверяем '+SUBNETS.length+' подсети × 254 адреса</div>'
+            +'<div id="ts-f" style="margin-top:.6em"></div>';
 
         scan(
             function(pct, list){
                 var p=body.querySelector('#ts-p');
-                if(p) p.textContent='Сканирование… '+pct+'%  · Найдено: '+list.length;
+                var s=body.querySelector('#ts-sub');
+                if(p) p.textContent='Сканирование… '+pct+'%';
+                if(s && list.length) s.textContent='Найдено: '+list.length+(list.length ? ' → '+list.map(function(x){return x.ip;}).join(', ') : '');
             },
             function(list){
                 var p=body.querySelector('#ts-p');
-                if(p) p.textContent='Готово. Найдено: '+list.length;
+                if(p) p.textContent='Готово. Найдено серверов: '+list.length;
+                var s=body.querySelector('#ts-sub');
+                if(s) s.textContent='';
+
                 var f=body.querySelector('#ts-f');
                 if(!f) return;
 
                 if(!list.length){
-                    f.innerHTML='<div class="ts-msg c-r">TorrServer не найден в сети '+SUBNET+'.x<br>'
-                        +'<span style="font-size:.88em;color:#888">Убедитесь что приложение запущено</span></div>';
+                    f.innerHTML='<div class="ts-msg c-r" style="margin-top:.5em">'
+                        +'TorrServer не найден ни в одной из подсетей.<br>'
+                        +'<span style="font-size:.88em;color:#888">Убедитесь что приложение запущено на ПК или Android</span>'
+                        +'</div>';
                     return;
                 }
 
-                var h='<div class="ts-sec" style="margin-top:.8em">Выберите сервер</div>';
+                // Показываем все найденные — с кнопкой "Выбрать"
+                // Если только один — применяем автоматически
+                if(list.length === 1) {
+                    applyServer(list[0].ip);
+                    renderStatus(list[0].ip, body);
+                    timer=setInterval(function(){ renderStatus(list[0].ip, body); }, REFRESH_MS);
+                    return;
+                }
+
+                // Несколько — показываем список для выбора
+                var h='<div class="ts-sec" style="margin-top:.6em">Найдено несколько серверов — выберите нужный</div>';
                 list.forEach(function(item){
-                    h+='<button class="ts-btn ts-pick" style="display:block;width:100%;text-align:left;margin:.25em 0" data-ip="'+item.ip+'">'
-                        +item.ip+' <span style="opacity:.4;font-size:.82em">v'+(item.info.version||'?')+'</span></button>';
+                    var isActive = (item.ip === savedHost);
+                    h+='<div class="ts-found-item">'
+                        +'<div>'
+                        +'<div class="ts-found-ip">'+(isActive?'● ':'')+item.ip+'</div>'
+                        +'<div class="ts-found-ver">TorrServer v'+(item.info.version||'?')+'</div>'
+                        +'</div>'
+                        +'<button class="ts-found-btn'+(isActive?' ts-found-active':'')+'" data-ip="'+item.ip+'">'
+                        +(isActive?'✓ Активен':'Выбрать')
+                        +'</button>'
+                        +'</div>';
                 });
                 f.innerHTML=h;
 
-                f.querySelectorAll('.ts-pick').forEach(function(btn){
+                f.querySelectorAll('.ts-found-btn').forEach(function(btn){
                     btn.onclick=function(){
                         var ip=this.getAttribute('data-ip');
-                        savedHost=ip;
-                        Lampa.Storage.set('ts_host',ip);
-                        Lampa.Storage.set('torrserver','http://'+ip+':'+PORT);
-                        Lampa.Noty.show('Сохранено: '+ip);
+                        applyServer(ip);
                         clearInterval(timer);
-                        renderStatus(ip,body);
+                        renderStatus(ip, body);
                         timer=setInterval(function(){ renderStatus(ip,body); },REFRESH_MS);
                     };
                 });
@@ -247,7 +308,8 @@
             overlay.remove();
         }
         function onKey(e){
-            if(e.keyCode===27||e.keyCode===8||e.keyCode===10009) close();
+            // ESC, Backspace, кнопка Back на Android TV (keyCode 10009 / 461)
+            if(e.keyCode===27||e.keyCode===8||e.keyCode===10009||e.keyCode===461) close();
         }
 
         overlay.querySelector('#ts-close').onclick=close;
@@ -265,11 +327,9 @@
     // ── INJECT MENU ───────────────────────────────
     function injectMenu() {
         if(document.getElementById('ts-menu-btn')) return;
-
         var menu=document.querySelector('.menu__list');
         if(!menu) return;
 
-        // Копируем классы с существующего пункта
         var sample=menu.querySelector('li');
         var li=document.createElement('li');
         li.id='ts-menu-btn';
@@ -285,11 +345,9 @@
 
         li.addEventListener('click', openPanel);
         menu.appendChild(li);
-        Lampa.Noty.show('TorrServer: пункт меню добавлен!');
     }
 
-    // ── OBSERVER + INIT ───────────────────────────
-    // Наблюдаем за DOM — как только меню появится, добавляем пункт
+    // ── INIT ─────────────────────────────────────
     var observer=new MutationObserver(function(){
         if(!document.getElementById('ts-menu-btn')){
             var menu=document.querySelector('.menu__list');
@@ -298,10 +356,7 @@
     });
     observer.observe(document.body,{childList:true,subtree:true});
 
-    // Пробуем сразу
     injectMenu();
-
-    // И ещё раз через секунду на случай медленной загрузки
     setTimeout(injectMenu, 1000);
     setTimeout(injectMenu, 3000);
 
