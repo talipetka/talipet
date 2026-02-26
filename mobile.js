@@ -1,6 +1,6 @@
 (function () {
     var style = document.createElement('style');
-    style.id = 'lampa-prisma-v11';
+    style.id = 'lampa-prisma-v12';
     style.textContent = `
         .prisma-box {
             margin: 10px 12px 12px 12px !important;
@@ -23,41 +23,40 @@
     function getPrismaVerdict(d) {
         const idealB = d.is4K ? (d.isHDR ? 25 : 20) : (d.isHEVC ? 4 : 7);
         
-        // 1. БЛОКИРОВКА ПО КАЧЕСТВУ (TS/CAM)
+        // 1. ПРОВЕРКА НА TS/CAM
         if (d.title.match(/ TS |TELESYNC| CAM /i)) {
             return { status: "Не рекомендуется", type: "bad", note: "Низкое качество (экранка)" };
         }
 
-        // 2. БЛОКИРОВКА ПО СЕТИ (ГЛАВНОЕ ПРАВИЛО)
-        // Если качающих БОЛЬШЕ чем раздающих — это ВСЕГДА желтый статус
+        // 2. ЖЕСТКОЕ ВЕТО: Если качающих больше чем раздающих — ВСЕГДА ЖЕЛТЫЙ
         if (d.l > d.s) {
             return { 
-                status: "Дефицит скорости", 
+                status: "Дефицит сидов", 
                 type: "warn", 
-                note: `Качающих (${d.l}) больше чем раздающих (${d.s}). Зеленый статус невозможен.` 
+                note: `Раздающих (${d.s}) меньше чем качающих (${d.l}). Скорость будет низкой.` 
             };
         }
 
-        if (d.s < 5) return { status: "Раздача мертва", type: "bad", note: "Слишком мало сидов" };
+        // 3. МИНИМАЛЬНЫЙ ПОРОГ ЖИЗНЕСПОСОБНОСТИ
+        if (d.s < 5) return { status: "Раздача мертва", type: "bad", note: "Слишком мало сидов для загрузки" };
 
-        // 3. ТОЛЬКО ЕСЛИ СЕТЬ В ПОРЯДКЕ (Сидов >= Личей), ПРОВЕРЯЕМ КАЧЕСТВО
+        // 4. ПРОВЕРКА КАЧЕСТВА (ТОЛЬКО ЕСЛИ СЕТЬ В ПОРЯДКЕ)
         if (d.b >= idealB && d.is4K && d.isHDR) {
-            return { status: "Идеально", type: "ideal", note: "Лучшее качество и свободная сеть" };
+            return { status: "Идеально", type: "ideal", note: "Высокий битрейт и здоровая сеть" };
         }
 
         if (d.b >= (idealB * 0.7)) {
-            return { status: "Рекомендуется", type: "good", note: "Хороший битрейт и профицит сидов" };
+            return { status: "Рекомендуется", type: "good", note: "Хорошее качество и свободные сиды" };
         }
 
-        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps ниже нормы (${idealB} Mbps)` };
+        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps ниже эталона (${idealB})` };
     }
 
     function processTorrent(el) {
-        if (el.classList.contains('prisma-v11-strict')) return;
+        if (el.classList.contains('prisma-v12-veto')) return;
 
         const getVal = (sel) => el.querySelector(sel)?.textContent || '';
         const title = getVal('.torrent-item__title').toUpperCase();
-        
         const seeds = parseInt(getVal('.torrent-item__seeds').replace(/[^\d]/g, '')) || 0;
         const leechs = parseInt(getVal('.torrent-item__leechs').replace(/[^\d]/g, '')) || 0;
         const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 0;
@@ -70,8 +69,6 @@
         };
 
         const v = getPrismaVerdict(data);
-
-        // Полная очистка старых блоков перед вставкой нового
         el.querySelectorAll('.prisma-box').forEach(b => b.remove());
         
         const card = document.createElement('div');
@@ -83,7 +80,7 @@
         `;
 
         el.appendChild(card);
-        el.classList.add('prisma-v11-strict');
+        el.classList.add('prisma-v12-veto');
     }
 
     const observer = new MutationObserver(mutations => {
