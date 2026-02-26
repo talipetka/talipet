@@ -1,6 +1,6 @@
 (function () {
     var style = document.createElement('style');
-    style.id = 'lampa-prisma-ultra-strict';
+    style.id = 'lampa-prisma-final-strict';
     style.textContent = `
         .prisma-box {
             margin: 10px 12px 12px 12px !important;
@@ -23,44 +23,42 @@
     function getPrismaVerdict(d) {
         const idealB = d.is4K ? (d.isHDR ? 25 : 20) : (d.isHEVC ? 4 : 7);
         
-        // УЛЬТИМАТИВНОЕ УСЛОВИЕ: Личей должно быть МЕНЬШЕ или РАВНО количеству сидов
-        const isDeficit = d.l > d.s; 
-        const ratio = d.l / (d.s || 1);
+        // СТРОГОЕ УСЛОВИЕ: Личей должно быть меньше чем сидов
+        const isOverloaded = d.l >= d.s; 
+        const isHealthy = d.s > d.l;
 
+        // 1. ПРОВЕРКА НА TS/CAM
         if (d.title.match(/ TS |TELESYNC| CAM /i)) {
-            return { status: "Не рекомендуется", type: "bad", note: "TS — качество из кинозала" };
+            return { status: "Не рекомендуется", type: "bad", note: "Низкое качество (экранка)" };
         }
-        if (d.s < 5) return { status: "Раздача мертва", type: "bad", note: "Слишком мало сидов" };
 
-        // Логика для ТОП-качества (4K HDR)
+        // 2. ЕСЛИ СЕТЬ ПЕРЕГРУЖЕНА (Твой случай со скриншотов)
+        if (isOverloaded) {
+            let statusName = "Дефицит сидов";
+            if (d.b >= idealB && d.is4K) statusName = "Очередь (Медленно)";
+            
+            return { 
+                status: statusName, 
+                type: "warn", 
+                note: `Качающих больше чем раздающих (${d.l} vs ${d.s}). Скорость будет ограничена.` 
+            };
+        }
+
+        // 3. ЕСЛИ СЕТЬ В ПОРЯДКЕ (Сидов больше), проверяем качество
         if (d.b >= idealB && d.is4K && d.isHDR) {
-            if (isDeficit) {
-                return { 
-                    status: "Очередь (Медленно)", 
-                    type: "warn", 
-                    note: `Качество ТОП, но качающих (${d.l}) больше чем раздающих (${d.s}).` 
-                };
-            }
-            return { status: "Идеально", type: "ideal", note: "Лучшее качество и профицит сидов" };
+            return { status: "Идеально", type: "ideal", note: "Лучшее качество и свободная сеть" };
         }
 
-        // Логика для Хорошего качества (Рекомендуется)
         if (d.b >= (idealB * 0.7)) {
-            if (isDeficit) {
-                return { 
-                    status: "Дефицит скорости", 
-                    type: "warn", 
-                    note: `Личей больше чем сидов. Качающих: ${d.l}, Раздающих: ${d.s}.` 
-                };
-            }
-            return { status: "Рекомендуется", type: "good", note: "Хороший битрейт и свободная сеть" };
+            return { status: "Рекомендуется", type: "good", note: "Хороший битрейт и профицит сидов" };
         }
 
-        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps (Ниже нормы)` };
+        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps ниже нормы для этого разрешения` };
     }
 
     function processTorrent(el) {
-        if (el.classList.contains('prisma-v6-ready')) return;
+        if (el.classList.contains('prisma-v10-ready')) return;
+
         const getVal = (sel) => el.querySelector(sel)?.textContent || '';
         const title = getVal('.torrent-item__title').toUpperCase();
         
@@ -76,16 +74,19 @@
         };
 
         const v = getPrismaVerdict(data);
+
         el.querySelectorAll('.prisma-box').forEach(b => b.remove());
         const card = document.createElement('div');
         card.className = `prisma-box p-${v.type}`;
+        
         card.innerHTML = `
             <span class="prisma-status-text">${v.status}</span>
-            <div class="prisma-stats-line">${data.is4K ? '2160p' : '1080p'} • ${bitrate} Mbps • WEB-DL</div>
+            <div class="prisma-stats-line">${data.is4K?'2160p':'1080p'} • ${bitrate} Mbps • WEB-DL</div>
             <div class="prisma-warning-text">${v.note}</div>
         `;
+
         el.appendChild(card);
-        el.classList.add('prisma-v6-ready');
+        el.classList.add('prisma-v10-ready');
     }
 
     const observer = new MutationObserver(mutations => {
@@ -96,6 +97,7 @@
             }
         }));
     });
+
     observer.observe(document.body, { childList: true, subtree: true });
     document.querySelectorAll('.torrent-item').forEach(processTorrent);
 })();
