@@ -78,15 +78,32 @@
         return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps ниже нормы (${idealB})` };
     }
 
+    function parseByLabel(text, ...labels) {
+        for (const label of labels) {
+            // Ищем паттерн: "Метка: 123" или "Метка 123" (с любыми пробелами)
+            const m = text.match(new RegExp(label + '[:\\s]+([\\d]+)', 'i'));
+            if (m) return parseInt(m[1]);
+        }
+        return 0;
+    }
+
     function processTorrent(el) {
         el.querySelectorAll('.prisma-box').forEach(b => b.remove());
 
         const getVal = (sel) => el.querySelector(sel)?.textContent || '0';
+        const fullText = el.textContent || '';
         const title = getVal('.torrent-item__title').toUpperCase();
 
-        const seeds  = parseInt(getVal('.torrent-item__seeds').replace(/\D/g, ''))   || 0;
-        const leechs = parseInt(getVal('.torrent-item__leechs').replace(/\D/g, ''))  || 0;
-        const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 0;
+        // Сначала пробуем CSS-классы, потом fallback на текстовый поиск
+        let seeds  = parseInt(getVal('.torrent-item__seeds').replace(/\D/g, ''))  || 0;
+        let leechs = parseInt(getVal('.torrent-item__leechs').replace(/\D/g, '')) || 0;
+
+        // Fallback: ищем по русским подписям в тексте карточки
+        if (seeds === 0)  seeds  = parseByLabel(fullText, 'Раздают', 'Сиды', 'Seeds');
+        if (leechs === 0) leechs = parseByLabel(fullText, 'Качают', 'Личи', 'Leechs', 'Leechers');
+
+        const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 
+                        parseFloat((fullText.match(/Битрейт[:\s]+([\d.]+)/i) || [])[1]) || 0;
 
         const data = {
             title: title, s: seeds, l: leechs, b: bitrate,
