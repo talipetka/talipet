@@ -1,108 +1,165 @@
 (function () {
-    const style = document.createElement('style');
+    // 1. СТИЛИ ИНТЕРФЕЙСА (Точная копия стилей Prisma)
+    var style = document.createElement('style');
+    style.id = 'lampa-prisma-styles';
     style.textContent = `
-        .prisma-card {
-            margin: 10px 12px !important;
-            padding: 14px !important;
-            border-radius: 6px !important;
-            background: rgba(10, 10, 10, 0.95) !important;
-            border-left: 5px solid #444;
-            font-family: 'Roboto', sans-serif;
+        .prisma-box {
+            margin: 10px 12px 12px 12px !important;
+            padding: 12px 15px !important;
+            border-radius: 4px !important;
+            background: rgba(255, 255, 255, 0.03) !important;
+            border-left: 4px solid #555;
+            position: relative;
+            overflow: hidden;
         }
-        .prisma-status { font-weight: bold; font-size: 15px !important; margin-bottom: 4px; display: flex; align-items: center; }
-        .prisma-meta { font-size: 13px !important; color: #ccc; opacity: 0.9; margin-bottom: 8px; }
-        .prisma-warning { font-size: 12px !important; color: #f1c40f; line-height: 1.4; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1); }
+        .prisma-box::after {
+            content: "";
+            position: absolute;
+            top: 0; right: 0; bottom: 0; left: 0;
+            background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+            pointer-events: none;
+        }
+        .prisma-status-text { 
+            font-weight: bold; 
+            font-size: 1.1em !important; 
+            margin-bottom: 4px; 
+            display: block;
+        }
+        .prisma-stats-line { 
+            font-size: 0.9em !important; 
+            color: rgba(255,255,255,0.7); 
+            margin-bottom: 6px;
+        }
+        .prisma-warning-text { 
+            font-size: 0.85em !important; 
+            line-height: 1.3;
+        }
+
+        /* Цветовые схемы Prisma */
+        .p-ideal { border-left-color: #2ecc71 !important; }
+        .p-ideal .prisma-status-text { color: #2ecc71 !important; }
         
-        /* Цвета статусов Prisma */
-        .status-ideal { border-left-color: #2ecc71 !important; } .status-ideal .prisma-status { color: #2ecc71 !important; }
-        .status-good  { border-left-color: #3498db !important; } .status-good .prisma-status { color: #3498db !important; }
-        .status-warn  { border-left-color: #f1c40f !important; } .status-warn .prisma-status { color: #f1c40f !important; }
-        .status-bad   { border-left-color: #e74c3c !important; } .status-bad .prisma-status { color: #e74c3c !important; }
+        .p-good { border-left-color: #3498db !important; }
+        .p-good .prisma-status-text { color: #3498db !important; }
+        .p-good .prisma-warning-text { color: #3498db; }
+
+        .p-warn { border-left-color: #f1c40f !important; background: rgba(241, 196, 15, 0.05) !important; }
+        .p-warn .prisma-status-text { color: #f1c40f !important; }
+        .p-warn .prisma-warning-text { color: #f1c40f !important; }
+
+        .p-bad { border-left-color: #e74c3c !important; background: rgba(231, 76, 60, 0.05) !important; }
+        .p-bad .prisma-status-text { color: #e74c3c !important; }
+        .p-bad .prisma-warning-text { color: #e74c3c !important; }
     `;
     document.head.appendChild(style);
 
-    function getPrismaVerdict(d) {
-        let v = { status: "Рекомендуется", type: "good", note: "Битрейт в норме" };
+    // 2. ФУНКЦИЯ АНАЛИЗА (Логика Prisma.ws)
+    function getPrismaVerdict(data) {
+        let res = { status: "Рекомендуется", type: "good", note: "Битрейт в норме" };
         let warns = [];
 
-        // 1. ПРОВЕРКА ИСТОЧНИКА (TS/WEB)
-        if (d.title.includes(' TS ') || d.title.includes('TELESYNC')) {
-            return { status: "Не рекомендуется", type: "bad", note: "TS — запись из кинотеатра, низкое качество звука и видео" };
+        // Проверка на TS (Камера)
+        if (data.title.match(/ TS |TELESYNC| CAM /i)) {
+            return { 
+                status: "Не рекомендуется - низкое качество", 
+                type: "bad", 
+                note: "TS - запись с кинотеатра, может быть реклама и шумы" 
+            };
         }
 
-        // 2. ЭТАЛОНЫ БИТРЕЙТА (Таблица Prisma)
-        let minIdeal = 0;
-        if (d.is4K) {
-            minIdeal = d.isHDR ? 25 : 20; 
+        // Определение эталона битрейта
+        let idealMin = 7; // Дефолт для 1080p AVC
+        if (data.is4K) {
+            idealMin = data.isHDR ? 25 : 20;
         } else {
-            minIdeal = d.isHEVC ? 4 : 7;
+            idealMin = data.isHEVC ? 4 : 7;
         }
 
         // Сравнение битрейта
-        if (d.b >= minIdeal) {
-            v.status = "Идеально";
-            v.type = "ideal";
-        } else if (d.b < (minIdeal * 0.7)) {
-            v.status = "Низкий битрейт";
-            v.type = "warn";
-            v.note = `Идеально ${minIdeal}-${minIdeal + 10}+ Mbps • Текущий ${d.b} Mbps`;
-        } else {
-            v.status = "Рекомендуется";
-            v.type = "good";
+        if (data.bitrate >= idealMin) {
+            res.status = "Идеально";
+            res.type = "ideal";
+            res.note = "Параметры соответствуют высшему качеству";
+        } else if (data.bitrate < (idealMin * 0.75)) {
+            res.status = "Низкий битрейт";
+            res.type = "warn";
+            res.note = `Низкий битрейт: Идеально ${idealMin}-${idealMin + 10}+ Mbps • Текущий ${data.bitrate} Mbps`;
         }
 
-        // 3. ПРОВЕРКА СИДОВ (Логика Prisma)
-        if (d.s > 500) v.status = `Отличная раздача (${d.s})`;
-        if (d.s < 20) warns.push("Мало раздающих");
-        if (d.l > d.s) warns.push("Качающих больше чем раздающих — может быть медленная загрузка");
+        // Специальные статусы для большого кол-ва сидов
+        if (data.seeds > 500 && res.type !== "warn") {
+            res.status = `Отличная раздача (${data.seeds})`;
+        }
 
-        if (warns.length) v.note = warns.join(' • ');
-        return v;
+        // Проверка доступности (Сиды/Личи)
+        if (data.seeds < 15) warns.push("Мало раздающих");
+        if (data.leechs > data.seeds && data.seeds < 50) {
+            warns.push("На данной раздаче качающих больше чем раздающих - может быть медленная загрузка");
+        }
+
+        if (warns.length > 0) res.note = warns.join(' • ');
+
+        return res;
     }
 
-    function render(el) {
-        if (el.classList.contains('prisma-applied')) return;
+    // 3. ОБРАБОТКА ЭЛЕМЕНТОВ
+    function processTorrent(el) {
+        if (el.classList.contains('prisma-processed')) return;
 
-        const title = el.querySelector('.torrent-item__title')?.textContent.toUpperCase() || '';
-        const rawS = el.querySelector('.torrent-item__seeds')?.textContent || '0';
-        const rawL = el.querySelector('.torrent-item__leechs')?.textContent || '0';
-        const rawB = el.querySelector('.torrent-item__bitrate')?.textContent || '0';
+        const getVal = (sel) => el.querySelector(sel)?.textContent || '';
+        
+        const title = getVal('.torrent-item__title').toUpperCase();
+        const seeds = parseInt(getVal('.torrent-item__seeds').replace(/[^\d]/g, '')) || 0;
+        const leechs = parseInt(getVal('.torrent-item__leechs').replace(/[^\d]/g, '')) || 0;
+        const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 0;
 
         const data = {
             title: title,
-            s: parseInt(rawS.replace(/[^\d]/g, '')),
-            l: parseInt(rawL.replace(/[^\d]/g, '')),
-            b: parseFloat(rawB.replace(/[^\d.]/g, '')),
+            seeds: seeds,
+            leechs: leechs,
+            bitrate: bitrate,
             is4K: title.includes('2160') || title.includes('4K'),
-            isHEVC: title.includes('HEVC') || title.includes('X265'),
-            isHDR: title.match(/HDR|DV|DOLBY VISION/i)
+            isHEVC: title.includes('HEVC') || title.includes('X265') || title.includes('H.265'),
+            isHDR: title.match(/HDR|DV|DOLBY VISION|HDR10/i)
         };
 
-        const res = getPrismaVerdict(data);
-        
-        el.querySelectorAll('.prisma-card').forEach(c => c.remove());
+        const verdict = getPrismaVerdict(data);
+
+        // Удаление старых блоков если есть
+        el.querySelectorAll('.prisma-box').forEach(b => b.remove());
+
+        // Создание карточки
         const card = document.createElement('div');
-        card.className = `prisma-card status-${res.type}`;
+        card.className = `prisma-box p-${verdict.type}`;
         
+        const techLine = [
+            data.is4K ? '2160p' : '1080p',
+            data.isHEVC ? 'HEVC' : 'AVC',
+            data.isHDR ? 'HDR/DV' : 'SDR',
+            bitrate + ' Mbps',
+            'WEB-DL'
+        ].join(' • ');
+
         card.innerHTML = `
-            <div class="prisma-status">${res.status}</div>
-            <div class="prisma-meta">
-                ${data.is4K ? '2160p' : '1080p'} • ${data.isHEVC ? 'HEVC' : 'AVC'} • 
-                ${data.isHDR ? 'HDR/DV' : 'SDR'} • ${data.b} Mbps • WEB-DL
-            </div>
-            <div class="prisma-warning">${res.note}</div>
+            <span class="prisma-status-text">${verdict.status}</span>
+            <div class="prisma-stats-line">${techLine}</div>
+            <div class="prisma-warning-text">${verdict.note}</div>
         `;
 
         el.appendChild(card);
-        el.classList.add('prisma-applied');
+        el.classList.add('prisma-processed');
     }
 
-    const observer = new MutationObserver(m => m.forEach(r => r.addedNodes.forEach(n => {
-        if (n.nodeType === 1) {
-            if (n.classList.contains('torrent-item')) render(n);
-            n.querySelectorAll('.torrent-item').forEach(render);
-        }
-    })));
+    // 4. СЛЕЖЕНИЕ ЗА ДОМ
+    const observer = new MutationObserver(mutations => {
+        mutations.forEach(m => m.addedNodes.forEach(node => {
+            if (node.nodeType === 1) {
+                if (node.classList.contains('torrent-item')) processTorrent(node);
+                node.querySelectorAll('.torrent-item').forEach(processTorrent);
+            }
+        }));
+    });
+
     observer.observe(document.body, { childList: true, subtree: true });
-    document.querySelectorAll('.torrent-item').forEach(render);
+    document.querySelectorAll('.torrent-item').forEach(processTorrent);
 })();
