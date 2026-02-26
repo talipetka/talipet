@@ -1,7 +1,10 @@
 (function () {
 
     var PORT       = 8090;
-    var SUBNETS    = ['192.168.0', '192.168.1', '192.168.31', '10.0.0'];  // все популярные подсети
+    var SUBNETS    = [];  // подсети от 192.168.1 до 192.168.31
+    for (var i = 1; i <= 31; i++) {
+        SUBNETS.push('192.168.' + i);
+    }
     var SCAN_MS    = 600;
     var BATCH      = 50;
     var REFRESH_MS = 10000;
