@@ -1,98 +1,90 @@
 (function () {
-    // 1. Добавляем улучшенные стили
     var style = document.createElement('style');
+    style.id = 'ifx-smart-torrents';
     style.textContent = `
         .ifx-res-block {
-            margin: 10px !important;
+            margin: 8px 12px 12px 12px !important;
             padding: 10px 15px !important;
             border-radius: 6px !important;
-            font-family: sans-serif;
+            background: rgba(0,0,0,0.4) !important;
             border-left: 5px solid #555;
-            background: rgba(0,0,0,0.3) !important;
         }
-        .ifx-res-title { font-weight: bold; font-size: 16px !important; margin-bottom: 4px; }
-        .ifx-res-tech { opacity: 0.9; font-size: 13px !important; color: #eee; }
-        .ifx-res-note { margin-top: 6px; font-size: 12px !important; line-height: 1.3; }
+        .ifx-res-title { font-weight: bold; font-size: 15px !important; margin-bottom: 3px; }
+        .ifx-res-tech { opacity: 0.8; font-size: 12px !important; color: #fff; }
+        .ifx-res-note { margin-top: 5px; font-size: 12px !important; line-height: 1.4; }
 
-        /* Идеально */
-        .ifx-res-ideal { background: rgba(46, 204, 113, 0.12) !important; border-left-color: #2ecc71 !important; }
-        .ifx-res-ideal .ifx-res-title { color: #2ecc71 !important; }
-        
-        /* Рекомендуется */
-        .ifx-res-good { background: rgba(52, 152, 219, 0.12) !important; border-left-color: #3498db !important; }
-        .ifx-res-good .ifx-res-title { color: #3498db !important; }
+        /* Статусы качества */
+        .ifx-status-ideal { border-left-color: #2ecc71 !important; background: rgba(46, 204, 113, 0.1) !important; }
+        .ifx-status-ideal .ifx-res-title { color: #2ecc71 !important; }
 
-        /* Внимание / Низкий битрейт */
-        .ifx-res-warn { background: rgba(241, 196, 15, 0.1) !important; border-left-color: #f1c40f !important; }
-        .ifx-res-warn .ifx-res-title { color: #f1c40f !important; }
-        .ifx-res-warn .ifx-res-note { color: #f1c40f !important; opacity: 0.9; }
+        .ifx-status-good { border-left-color: #3498db !important; background: rgba(52, 152, 219, 0.1) !important; }
+        .ifx-status-good .ifx-res-title { color: #3498db !important; }
+
+        .ifx-status-warn { border-left-color: #f1c40f !important; background: rgba(241, 196, 15, 0.08) !important; }
+        .ifx-status-warn .ifx-res-title { color: #f1c40f !important; }
+
+        .ifx-status-bad { border-left-color: #e74c3c !important; background: rgba(231, 76, 60, 0.08) !important; }
+        .ifx-status-bad .ifx-res-title { color: #e74c3c !important; }
     `;
     document.head.appendChild(style);
 
     function processItem(el) {
-        if (el.classList.contains('ifx-v3-ready')) return;
+        if (el.classList.contains('ifx-v4-ready')) return;
 
-        // --- ИЗВЛЕЧЕНИЕ ДАННЫХ (с защитой от ошибок) ---
-        var rawSeeds = el.querySelector('.torrent-item__seeds')?.textContent || '0';
-        var rawLeechs = el.querySelector('.torrent-item__leechs')?.textContent || '0';
-        var rawBitrate = el.querySelector('.torrent-item__bitrate')?.textContent || '0';
+        // --- ТОЧНЫЙ ПАРСИНГ ДАННЫХ ---
+        const getVal = (selector) => el.querySelector(selector)?.textContent || '';
         
-        // Очищаем числа от мусора (пробелы, "Мбит/с" и т.д.)
-        var seeds = parseInt(rawSeeds.replace(/[^\d]/g, '')) || 0;
-        var leechs = parseInt(rawLeechs.replace(/[^\d]/g, '')) || 0;
-        var bitrate = parseFloat(rawBitrate.replace(/[^\d.]/g, '')) || 0;
+        // Извлекаем цифры, игнорируя текст (Раздают, Мбит/с и т.д.)
+        const seeds = parseInt(getVal('.torrent-item__seeds').replace(/[^\d]/g, '')) || 0;
+        const leechs = parseInt(getVal('.torrent-item__leechs').replace(/[^\d]/g, '')) || 0;
+        const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 0;
+        const title = getVal('.torrent-item__title').toUpperCase();
 
-        // Данные из названия
-        var titleText = el.querySelector('.torrent-item__title')?.textContent || '';
-        var is4K = titleText.includes('2160') || titleText.includes('4K');
-        var codec = titleText.includes('HEVC') || titleText.includes('H.265') || titleText.includes('x265') ? 'HEVC' : 'AVC';
-        var hdr = titleText.match(/HDR|DV|Dolby Vision|HDR10\+/i)?.[0] || 'SDR';
+        // Определение тех-характеристик
+        const is4K = title.includes('2160') || title.includes('4K');
+        const isTS = title.includes(' TS ') || title.includes('TELESYNC');
+        const codec = title.includes('HEVC') || title.includes('X265') || title.includes('H.265') ? 'HEVC' : 'AVC';
+        const hdr = title.match(/HDR|DV|DOLBY VISION/i) ? 'HDR/DV' : 'SDR';
 
-        // --- ЛОГИКА АНАЛИЗА ---
-        var result = { title: "Хорошая раздача", note: "Параметры в норме.", type: "good" };
+        // --- ЛОГИКА ОЦЕНКИ ---
+        let rating = { label: "Хорошая раздача", note: "Параметры в норме.", type: "good" };
 
-        if (is4K) {
-            if (bitrate >= 25) {
-                result = { title: "Идеально", note: "Высокий битрейт для 4K. Максимальное качество.", type: "ideal" };
-            } else if (bitrate < 15) {
-                result = { 
-                    title: "Низкий битрейт (" + seeds + ")", 
-                    note: "Низкий битрейт для 4K: Идеально 25-50+ Mbps • Текущий " + (bitrate || 'неизвестен'), 
-                    type: "warn" 
-                };
-            }
+        if (isTS) {
+            rating = { label: "Не рекомендуется - низкое качество", note: "TS - запись с кинотеатра, может быть реклама и шумы.", type: "bad" };
+        } else if (is4K) {
+            if (bitrate >= 25) rating = { label: "Идеально", note: "Отличный битрейт для 4K. Рекомендуется для больших экранов.", type: "ideal" };
+            else if (bitrate >= 15) rating = { label: "Рекомендуется", note: "Средний битрейт для 4K. Хорошее качество изображения.", type: "good" };
+            else rating = { label: "Низкий битрейт", note: "Низкий битрейт: Идеально 25-35+ Mbps • Текущий " + bitrate + " Mbps", type: "warn" };
         } else {
             // Для 1080p
-            if (bitrate >= 10) result = { title: "Отличная раздача", note: "Оптимально для Full HD.", type: "ideal" };
-            else result = { title: "Среднее качество", note: "Битрейт ниже среднего для 1080p.", type: "good" };
+            if (bitrate >= 8) rating = { label: "Отличная раздача", note: "Битрейт в норме для Full HD.", type: "ideal" };
+            else rating = { label: "Среднее качество", note: "Подходит для небольших экранов или мобильных устройств.", type: "good" };
         }
 
-        // Проверка скорости (сиды vs личи)
-        if (leechs > seeds && seeds < 50) {
-            result.note = "Внимание: качающих больше чем раздающих. Возможна низкая скорость.";
-            result.type = "warn";
+        // Предупреждение о скорости загрузки
+        if (leechs > seeds && seeds < 20) {
+            rating.note = "На данной раздаче качающих больше чем раздающих - может быть медленная загрузка.";
+            if (rating.type === "ideal") rating.type = "good"; // Снижаем приоритет из-за скорости
         }
 
-        // --- ОТРИСОВКА ---
-        // Удаляем старые блоки, если они были созданы прошлым кодом
+        // --- ВИЗУАЛИЗАЦИЯ ---
         el.querySelectorAll('.ifx-res-block').forEach(b => b.remove());
-
-        var info = document.createElement('div');
-        info.className = 'ifx-res-block ifx-res-' + result.type;
-        info.innerHTML = `
-            <div class="ifx-res-title">${result.title} (${seeds})</div>
-            <div class="ifx-res-tech">${is4K ? '2160p' : '1080p'} • ${codec} • ${hdr} • ${bitrate} Mbps</div>
-            <div class="ifx-res-note">${result.note}</div>
+        
+        const infoBlock = document.createElement('div');
+        infoBlock.className = `ifx-res-block ifx-status-${rating.type}`;
+        infoBlock.innerHTML = `
+            <div class="ifx-res-title">${rating.label} (${seeds})</div>
+            <div class="ifx-res-tech">${is4K ? '2160p' : '1080p'} • ${codec} • ${hdr} • ${bitrate} Mbps • WEB-DL</div>
+            <div class="ifx-res-note">${rating.note}</div>
         `;
 
-        el.appendChild(info);
-        el.classList.add('ifx-v3-ready');
+        el.appendChild(infoBlock);
+        el.classList.add('ifx-v4-ready');
     }
 
-    // Наблюдатель за появлением новых элементов
-    var observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(m) {
-            m.addedNodes.forEach(function(node) {
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((m) => {
+            m.addedNodes.forEach((node) => {
                 if (node.nodeType === 1) {
                     if (node.classList.contains('torrent-item')) processItem(node);
                     node.querySelectorAll('.torrent-item').forEach(processItem);
