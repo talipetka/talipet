@@ -1,62 +1,59 @@
-// Функция для определения цвета в зависимости от битрейта (Мбит/с)
-function getBitrateColor(bitrate) {
-    if (bitrate >= 40) return '#ff3f3f'; // Тяжелый 4K (Remux) - красный акцент
-    if (bitrate >= 20) return '#ff8c00'; // Хороший 1080p/4K - оранжевый
-    if (bitrate >= 10) return '#00d0ff'; // Средний - голубой
-    return '#aaaaaa'; // Низкий - серый
-}
+(function() {
+  // 1. Добавляем стили в HEAD для мгновенного применения
+  var style = document.createElement('style');
+  style.textContent = `
+    /* Стили для строк торрентов */
+    .ifx-torrent-high-seeds { border-left: 4px solid #2ecc71 !important; background: rgba(46, 204, 113, 0.05) !important; }
+    .ifx-torrent-mid-seeds  { border-left: 4px solid #f1c40f !important; background: rgba(241, 196, 15, 0.05) !important; }
+    .ifx-torrent-low-seeds  { border-left: 4px solid #e74c3c !important; background: rgba(231, 76, 60, 0.05) !important; }
+    
+    /* Стили для битрейта */
+    .ifx-bitrate-heavy { color: #ff3f3f !important; font-weight: bold; text-shadow: 0 0 5px rgba(255,63,63,0.3); }
+    .ifx-bitrate-good  { color: #ff8c00 !important; }
+    .ifx-bitrate-mid   { color: #00d0ff !important; }
+    
+    .torrent-item { transition: all 0.2s; margin-bottom: 2px !important; }
+  `;
+  document.head.appendChild(style);
 
-// Функция для определения цвета сидеров
-function getSeedersColor(seeds) {
-    if (seeds <= 5) return '#ff4d4d';  // Мало - красный
-    if (seeds <= 20) return '#ffcc00'; // Средне - желтый
-    return '#2ecc71';                // Много - зеленый
-}
+  // 2. Функция обработки каждой строки торрента
+  function processTorrentItem(el) {
+    if (el.classList.contains('ifx-processed')) return;
 
-// Основной хук на отрисовку торрентов
-Lampa.Listener.follow('full', function(e) {
-    if (e.type === 'complite' && e.name === 'torrent') {
-        var items = e.object.items || [];
-        
-        // Ждем отрисовки DOM
-        setTimeout(function() {
-            $('.torrent-item').each(function(i, item) {
-                var data = items[i];
-                if (!data) return;
-
-                var $item = $(item);
-                
-                // 1. Рамка по количеству сидов (если включено в настройках)
-                if (settings.tor_frame) {
-                    var sColor = getSeedersColor(data.seeds);
-                    $item.css({
-                        'border-left': '4px solid ' + sColor,
-                        'margin-bottom': '5px',
-                        'background': 'rgba(255,255,255,0.03)'
-                    });
-                }
-
-                // 2. Подсветка битрейта
-                if (settings.tor_bitrate && data.bitrate) {
-                    var bColor = getBitrateColor(parseFloat(data.bitrate));
-                    $item.find('.torrent-item__bitrate').css({
-                        'color': bColor,
-                        'font-weight': 'bold'
-                    });
-                }
-
-                // 3. Добавление метки кодека (HEVC/AVC)
-                if (!$item.find('.ifx-codec-badge').length) {
-                    var codec = data.title.match(/HEVC|H\.265|x265/i) ? 'HEVC' : 'AVC';
-                    var badgeColor = (codec === 'HEVC') ? '#9b59b6' : '#34495e';
-                    
-                    $item.find('.torrent-item__title').after(
-                        '<span class="ifx-codec-badge" style="background:' + badgeColor + 
-                        '; color:#fff; font-size:0.6em; padding:2px 4px; border-radius:3px; margin-left:10px; vertical-align:middle;">' + 
-                        codec + '</span>'
-                    );
-                }
-            });
-        }, 100);
+    // Ищем количество сидов
+    var seedsEl = el.querySelector('.torrent-item__seeds');
+    if (seedsEl) {
+      var seeds = parseInt(seedsEl.textContent) || 0;
+      if (seeds >= 20) el.classList.add('ifx-torrent-high-seeds');
+      else if (seeds >= 6) el.classList.add('ifx-torrent-mid-seeds');
+      else el.classList.add('ifx-torrent-low-seeds');
     }
-});
+
+    // Ищем битрейт
+    var bitrateEl = el.querySelector('.torrent-item__bitrate');
+    if (bitrateEl) {
+      var bitrate = parseFloat(bitrateEl.textContent) || 0;
+      if (bitrate >= 40) bitrateEl.classList.add('ifx-bitrate-heavy');
+      else if (bitrate >= 20) bitrateEl.classList.add('ifx-bitrate-good');
+      else if (bitrate >= 10) bitrateEl.classList.add('ifx-bitrate-mid');
+    }
+
+    el.classList.add('ifx-processed');
+  }
+
+  // 3. Следим за появлением торрентов в DOM
+  var observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+      mutation.addedNodes.forEach(function(node) {
+        if (node.nodeType === 1) {
+          // Если это сама строка торрента или она внутри добавленного узла
+          if (node.classList.contains('torrent-item')) processTorrentItem(node);
+          var items = node.querySelectorAll('.torrent-item');
+          items.forEach(processTorrentItem);
+        }
+      });
+    });
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
