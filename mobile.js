@@ -1,6 +1,10 @@
 (function () {
+    // Удаляем старые стили, если они были
+    const oldStyle = document.getElementById('lampa-prisma-v13');
+    if (oldStyle) oldStyle.remove();
+
     var style = document.createElement('style');
-    style.id = 'lampa-prisma-v12';
+    style.id = 'lampa-prisma-v13';
     style.textContent = `
         .prisma-box {
             margin: 10px 12px 12px 12px !important;
@@ -22,43 +26,46 @@
 
     function getPrismaVerdict(d) {
         const idealB = d.is4K ? (d.isHDR ? 25 : 20) : (d.isHEVC ? 4 : 7);
-        
-        // 1. ПРОВЕРКА НА TS/CAM
+
+        // --- ЭТАП 1: ПРОВЕРКА НА ТРЕШ ---
         if (d.title.match(/ TS |TELESYNC| CAM /i)) {
-            return { status: "Не рекомендуется", type: "bad", note: "Низкое качество (экранка)" };
+            return { status: "Не рекомендуется", type: "bad", note: "TS/CAM — качество из кинозала" };
         }
 
-        // 2. ЖЕСТКОЕ ВЕТО: Если качающих больше чем раздающих — ВСЕГДА ЖЕЛТЫЙ
-        if (d.l > d.s) {
+        // --- ЭТАП 2: ЖЕСТКОЕ СЕТЕВОЕ ВЕТО (ГЛАВНОЕ) ---
+        // Если личей больше или столько же, сколько сидов - СРАЗУ ВЫХОДИМ С ПРЕДУПРЕЖДЕНИЕМ
+        if (d.l >= d.s) {
             return { 
                 status: "Дефицит сидов", 
                 type: "warn", 
-                note: `Раздающих (${d.s}) меньше чем качающих (${d.l}). Скорость будет низкой.` 
+                note: `Сеть перегружена: ${d.l} качают, а раздают всего ${d.s}. Будет тормозить.` 
             };
         }
 
-        // 3. МИНИМАЛЬНЫЙ ПОРОГ ЖИЗНЕСПОСОБНОСТИ
-        if (d.s < 5) return { status: "Раздача мертва", type: "bad", note: "Слишком мало сидов для загрузки" };
+        if (d.s < 5) return { status: "Раздача мертва", type: "bad", note: "Почти нет раздающих" };
 
-        // 4. ПРОВЕРКА КАЧЕСТВА (ТОЛЬКО ЕСЛИ СЕТЬ В ПОРЯДКЕ)
+        // --- ЭТАП 3: ОЦЕНКА КАЧЕСТВА (ТОЛЬКО ЕСЛИ СЕТЬ ЗДОРОВА) ---
         if (d.b >= idealB && d.is4K && d.isHDR) {
-            return { status: "Идеально", type: "ideal", note: "Высокий битрейт и здоровая сеть" };
+            return { status: "Идеально", type: "ideal", note: "Высокий битрейт и профицит сидов" };
         }
 
         if (d.b >= (idealB * 0.7)) {
             return { status: "Рекомендуется", type: "good", note: "Хорошее качество и свободные сиды" };
         }
 
-        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps ниже эталона (${idealB})` };
+        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps ниже нормы (${idealB})` };
     }
 
     function processTorrent(el) {
-        if (el.classList.contains('prisma-v12-veto')) return;
+        // Убираем старые блоки, если они остались от прошлых версий
+        el.querySelectorAll('.prisma-box').forEach(b => b.remove());
 
-        const getVal = (sel) => el.querySelector(sel)?.textContent || '';
+        const getVal = (sel) => el.querySelector(sel)?.textContent || '0';
         const title = getVal('.torrent-item__title').toUpperCase();
-        const seeds = parseInt(getVal('.torrent-item__seeds').replace(/[^\d]/g, '')) || 0;
-        const leechs = parseInt(getVal('.torrent-item__leechs').replace(/[^\d]/g, '')) || 0;
+        
+        // Очистка чисел от любого мусора (пробелы, слова и т.д.)
+        const seeds = parseInt(getVal('.torrent-item__seeds').replace(/\D/g, '')) || 0;
+        const leechs = parseInt(getVal('.torrent-item__leechs').replace(/\D/g, '')) || 0;
         const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 0;
 
         const data = {
@@ -69,8 +76,6 @@
         };
 
         const v = getPrismaVerdict(data);
-        el.querySelectorAll('.prisma-box').forEach(b => b.remove());
-        
         const card = document.createElement('div');
         card.className = `prisma-box p-${v.type}`;
         card.innerHTML = `
@@ -80,9 +85,9 @@
         `;
 
         el.appendChild(card);
-        el.classList.add('prisma-v12-veto');
     }
 
+    // Запуск
     const observer = new MutationObserver(mutations => {
         mutations.forEach(m => m.addedNodes.forEach(node => {
             if (node.nodeType === 1) {
