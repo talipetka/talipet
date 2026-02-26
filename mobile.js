@@ -80,10 +80,10 @@
         .p-ideal .prisma-note   { color: rgba(46,204,113,0.75) !important; }
         .p-ideal .prisma-ratio  { color: rgba(255,255,255,0.6) !important; }
 
-        .p-good::before { background: #3498db !important; }
-        .p-good::after  { background: radial-gradient(ellipse at left, #3498db, transparent) !important; }
-        .p-good .prisma-status { color: #5dade2 !important; }
-        .p-good .prisma-note   { color: rgba(93,173,226,0.75) !important; }
+        .p-good::before { background: #27ae60 !important; }
+        .p-good::after  { background: radial-gradient(ellipse at left, #27ae60, transparent) !important; }
+        .p-good .prisma-status { color: #27ae60 !important; }
+        .p-good .prisma-note   { color: rgba(39,174,96,0.75) !important; }
         .p-good .prisma-ratio  { color: rgba(255,255,255,0.6) !important; }
 
         .p-warn::before { background: #f1c40f !important; }
