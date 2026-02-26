@@ -21,53 +21,60 @@
     document.head.appendChild(style);
 
     function getPrismaVerdict(d) {
-        const idealBitrate = d.is4K ? (d.isHDR ? 25 : 20) : (d.isHEVC ? 4 : 7);
+        const idealB = d.is4K ? (d.isHDR ? 25 : 20) : (d.isHEVC ? 4 : 7);
         
-        // ГЛАВНОЕ УСЛОВИЕ: Сидов должно быть БОЛЬШЕ чем личей
-        const isHealthyNetwork = d.s > d.l; 
+        // КЛЮЧЕВОЕ УСЛОВИЕ: Сидов ДОЛЖНО быть больше чем качающих
+        const isNetworkHealthy = d.s > d.l; 
+        const isNetworkOverloaded = d.l > d.s;
         const ratio = d.l / (d.s || 1);
 
-        // 1. ПРОВЕРКА НА ТРЕШ
+        // 1. ПРОВЕРКА НА МУСОР (TS/CAM)
         if (d.title.match(/ TS |TELESYNC| CAM /i)) {
-            return { status: "Не рекомендуется", type: "bad", note: "TS — качество из кинозала" };
+            return { status: "Не рекомендуется", type: "bad", note: "TS — качество из кинозала, смотреть нельзя" };
+        }
+        if (d.s < 5) {
+            return { status: "Раздача мертва", type: "bad", note: `Всего ${d.s} сидов. Скачивание невозможно.` };
         }
 
-        if (d.s < 5) return { status: "Раздача мертва", type: "bad", note: "Нет раздающих" };
+        // 2. ПРИСВОЕНИЕ СТАТУСА (Учитываем ВСЁ)
 
-        // 2. ПРИСВОЕНИЕ СТАТУСА
-        
-        // Вариант А: Технический ТОП
-        if (d.b >= idealBitrate && d.is4K && d.isHDR) {
-            if (!isHealthyNetwork) {
+        // ТЕХНИЧЕСКИЙ ТОП (4K, HDR, 25+ Mbps)
+        if (d.b >= idealB && d.is4K && d.isHDR) {
+            if (isNetworkOverloaded) {
                 return { 
                     status: "Очередь (Медленно)", 
                     type: "warn", 
-                    note: `Технически идеал, но качающих больше (${d.l}) чем раздающих (${d.s}).` 
+                    note: `Качество Идеал, но сеть перегружена. Качающих в ${ratio.toFixed(1)} раз больше!` 
                 };
             }
-            return { status: "Идеально", type: "ideal", note: "Лучшее качество и здоровая сеть" };
+            if (d.s < 30) {
+                return { status: "Топ-качество (Риск)", type: "warn", note: "Мало раздающих для тяжелого файла. Может виснуть." };
+            }
+            return { status: "Идеально", type: "ideal", note: "Лучшее качество и здоровая раздача" };
         }
 
-        // Вариант Б: Просто хорошая раздача
-        if (d.b >= (idealBitrate * 0.7)) {
-            if (!isHealthyNetwork) {
+        // ХОРОШИЙ ВАРИАНТ (Битрейт в норме)
+        if (d.b >= (idealB * 0.7)) {
+            if (isNetworkOverloaded) {
                 return { 
-                    status: "Перегруженная сеть", 
+                    status: "Низкая скорость", 
                     type: "warn", 
-                    note: `Личей в ${ratio.toFixed(1)} раз больше. Скорость будет нестабильной.` 
+                    note: `Слишком много качающих (${d.l}). Сиды (${d.s}) не справятся.` 
                 };
             }
-            return { status: "Рекомендуется", type: "good", note: "Хороший баланс и свободные сиды" };
+            return { status: "Рекомендуется", type: "good", note: "Хороший битрейт и свободные сиды" };
         }
 
-        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps (Нужно ${idealBitrate}+)` };
+        // ПЛОХОЙ ВАРИАНТ
+        return { status: "Низкий битрейт", type: "warn", note: `Битрейт ${d.b} Mbps (Эталон для 4K: ${idealB}+)` };
     }
 
-    // Рендеринг и MutationObserver остаются из твоего кода...
     function processTorrent(el) {
-        if (el.classList.contains('prisma-strict-ready')) return;
+        if (el.classList.contains('prisma-strict-final')) return;
+
         const getVal = (sel) => el.querySelector(sel)?.textContent || '';
         const title = getVal('.torrent-item__title').toUpperCase();
+        
         const seeds = parseInt(getVal('.torrent-item__seeds').replace(/[^\d]/g, '')) || 0;
         const leechs = parseInt(getVal('.torrent-item__leechs').replace(/[^\d]/g, '')) || 0;
         const bitrate = parseFloat(getVal('.torrent-item__bitrate').replace(/[^\d.]/g, '')) || 0;
@@ -80,16 +87,21 @@
         };
 
         const v = getPrismaVerdict(data);
+
         el.querySelectorAll('.prisma-box').forEach(b => b.remove());
         const card = document.createElement('div');
         card.className = `prisma-box p-${v.type}`;
+        
+        const info = `${data.is4K ? '2160p' : '1080p'} • ${data.isHEVC ? 'HEVC' : 'AVC'} • ${data.isHDR ? 'HDR/DV' : 'SDR'} • ${bitrate} Mbps`;
+
         card.innerHTML = `
             <span class="prisma-status-text">${v.status}</span>
-            <div class="prisma-stats-line">${data.is4K?'2160p':'1080p'} • ${bitrate} Mbps • WEB-DL</div>
+            <div class="prisma-stats-line">${info} • WEB-DL</div>
             <div class="prisma-warning-text">${v.note}</div>
         `;
+
         el.appendChild(card);
-        el.classList.add('prisma-strict-ready');
+        el.classList.add('prisma-strict-final');
     }
 
     const observer = new MutationObserver(mutations => {
@@ -100,6 +112,7 @@
             }
         }));
     });
+
     observer.observe(document.body, { childList: true, subtree: true });
     document.querySelectorAll('.torrent-item').forEach(processTorrent);
 })();
