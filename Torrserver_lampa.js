@@ -250,6 +250,12 @@
         var startBtn = body.querySelector('#ts-start-scan');
         var cancelBtn = body.querySelector('#ts-cancel-scan');
 
+        // Stop keyboard events from propagating to the host app when typing in inputs
+        ['keydown','keypress','keyup'].forEach(function(evt){
+            prefixInput.addEventListener(evt, function(e){ e.stopPropagation(); }, true);
+            rangeInput.addEventListener(evt, function(e){ e.stopPropagation(); }, true);
+        });
+
         startBtn.onclick = function(e) {
             e.stopPropagation();
             var prefix = (prefixInput.value || '192.168.').trim();
@@ -411,6 +417,9 @@
         function close(){
             clearInterval(timer);
             document.removeEventListener('keydown',onKey);
+            try { window.removeEventListener('keydown', __ts_key_handler, true); } catch(e){}
+            try { window.removeEventListener('keypress', __ts_key_handler, true); } catch(e){}
+            try { window.removeEventListener('keyup', __ts_key_handler, true); } catch(e){}
             overlay.remove();
         }
         function onKey(e){
@@ -423,6 +432,27 @@
             if(e.target===overlay) close(); 
             else if(e.target && e.target.tagName === 'INPUT') e.stopPropagation();
         };
+
+        // Block keyboard events from reaching the underlying app while overlay is open.
+        // Uses capture phase so it intercepts before other handlers.
+        window.__ts_key_handler = function(e){
+            // Allow close keys to work (ESC, Backspace, Android Back)
+            var code = e.keyCode || e.which;
+            if(code===27 || code===8 || code===10009 || code===461) {
+                // let onKey handle closing via existing listener
+                return;
+            }
+            // If the event target is inside our overlay, stop propagation to app
+            if(overlay.contains(e.target)){
+                try{ e.stopImmediatePropagation(); } catch(err){}
+                try{ e.stopPropagation(); } catch(err){}
+            }
+        };
+
+        window.addEventListener('keydown', __ts_key_handler, true);
+        window.addEventListener('keypress', __ts_key_handler, true);
+        window.addEventListener('keyup', __ts_key_handler, true);
+
         document.addEventListener('keydown',onKey);
 
         // Всегда начинаем сканирование сети, игнорируем сохранённый IP
