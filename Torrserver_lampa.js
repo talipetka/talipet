@@ -55,6 +55,8 @@
         '.ts-scan-sub{font-size:.75em;color:rgba(255,255,255,.28);margin-top:.2em}',
         'input[type="text"].ts-input{padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;width:100%;box-sizing:border-box}',
         'input[type="text"].ts-input:focus{outline:none;border-color:rgba(255,255,255,.5);background:#1a2638}',
+        'input[type="text"]{padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;width:100%;box-sizing:border-box;position:relative;z-index:100000;pointer-events:auto}',
+        'input[type="text"]:focus{outline:none;border-color:rgba(255,255,255,.5);background:#1a2638}',
         'code{background:#1e2642;padding:.1em .3em;border-radius:2px;color:#aaa;font-size:.9em}'
     ].join('');
     document.head.appendChild(style);
@@ -227,12 +229,12 @@
         h += '<div class="ts-msg" style="margin:.6em 0">Введите диапазон для сканирования</div>';
         h += '<div style="margin:.8em 0">';
         h += '<div style="color:rgba(255,255,255,.45);font-size:.85em;margin-bottom:.4em">Префикс IP</div>';
-        h += '<div style="display:flex;gap:.4em"><input type="text" id="ts-prefix" value="192.168." style="flex:1;padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em" /></div>';
+        h += '<div style="display:flex;gap:.4em"><input type="text" id="ts-prefix" value="192.168." style="flex:1;padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;position:relative;z-index:100001" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" /></div>';
         h += '</div>';
         h += '<div style="margin:.8em 0">';
         h += '<div style="color:rgba(255,255,255,.45);font-size:.85em;margin-bottom:.4em">Диапазон последнего октета</div>';
         h += '<div style="display:flex;gap:.4em">';
-        h += '<input type="text" id="ts-range" value="1-31" style="flex:1;padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;placeholder:\'1-31 или 1,5,10\'" />';
+        h += '<input type="text" id="ts-range" value="1-31" style="flex:1;padding:.5em;background:#1e2642;border:1px solid rgba(255,255,255,.2);border-radius:4px;color:#fff;font-family:inherit;font-size:.9em;position:relative;z-index:100001;placeholder:\'1-31 или 1,5,10\'" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" />';
         h += '</div>';
         h += '<div style="color:rgba(255,255,255,.28);font-size:.75em;margin-top:.3em">Примеры: <code style="background:#1e2642;padding:.1em .3em;border-radius:2px">1-31</code>, <code style="background:#1e2642;padding:.1em .3em;border-radius:2px">0-255</code>, <code style="background:#1e2642;padding:.1em .3em;border-radius:2px">1,5,10,20</code></div>';
         h += '</div>';
@@ -248,7 +250,8 @@
         var startBtn = body.querySelector('#ts-start-scan');
         var cancelBtn = body.querySelector('#ts-cancel-scan');
 
-        startBtn.onclick = function() {
+        startBtn.onclick = function(e) {
+            e.stopPropagation();
             var prefix = (prefixInput.value || '192.168.').trim();
             var rangeStr = (rangeInput.value || '1-31').trim();
 
@@ -282,11 +285,12 @@
             renderScanProgress(body, subnets);
         };
 
-        cancelBtn.onclick = function() {
+        cancelBtn.onclick = function(e) {
+            e.stopPropagation();
             renderStatus(savedHost || '', body);
         };
 
-        prefixInput.focus();
+        setTimeout(function(){ prefixInput.focus(); }, 100);
     }
 
     // ── RENDER SCAN PROGRESS ───────────────────────
@@ -415,7 +419,10 @@
         }
 
         overlay.querySelector('#ts-close').onclick=close;
-        overlay.onclick=function(e){ if(e.target===overlay) close(); };
+        overlay.onclick=function(e){ 
+            if(e.target===overlay) close(); 
+            else if(e.target && e.target.tagName === 'INPUT') e.stopPropagation();
+        };
         document.addEventListener('keydown',onKey);
 
         // Всегда начинаем сканирование сети, игнорируем сохранённый IP
